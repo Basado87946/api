@@ -16,6 +16,10 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
+// Sesiones y estado de dispositivos en memoria (demo)
+const sessions = new Map(); // key: device_id, value: { user_id, unique_id, username, status }
+const deviceStatus = new Map(); // key: device_id, value: { disconnected: boolean }
+
 // Rutas estáticas (coloca aquí imágenes y zips reales)
 app.use('/static', express.static(path.join(__dirname, 'static')));
 app.use('/files', express.static(path.join(__dirname, 'files')));
@@ -63,6 +67,65 @@ app.get('/config.json', (req, res) => {
   });
 });
 
+// Endpoint de login que espera la app: POST /api/launcher/connect
+// Body: { code, device_id, device_name, device_os }
+app.post('/api/launcher/connect', (req, res) => {
+  const { code, device_id, device_name, device_os } = req.body || {};
+
+  if (!code || !device_id) {
+    return res.status(400).json({ success: false, error: 'Missing code or device_id' });
+  }
+
+  const userId = `user_${(device_id || 'dev').replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+  const uniqueId = `uid_${(code || 'code').replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`;
+
+  // Guardar sesión en memoria
+  sessions.set(device_id, {
+    user_id: userId,
+    unique_id: uniqueId,
+    username: 'User',
+    status: 'Active'
+  });
+  deviceStatus.set(device_id, { disconnected: false });
+
+  // Respuesta en el formato que la app consume
+  res.json({
+    success: true,
+    user_id: userId,
+    unique_id: uniqueId,
+    username: 'User',
+    status: 'Active',
+    hwid: device_id,
+    device_name: device_name || '',
+    device_os: device_os || ''
+  });
+});
+
+// Fallback usado si el servidor devuelve 405: GET /api/launcher/status
+app.get('/api/launcher/status', (req, res) => {
+  const { code, device_id } = req.query;
+  res.json({ success: true, status: 'ok', code: code || '', device_id: device_id || '' });
+});
+
+// La app verifica periódicamente si el dispositivo fue desconectado
+// GET /api/user/device-status?device_id=HW-XXXX
+app.get('/api/user/device-status', (req, res) => {
+  const { device_id } = req.query;
+  if (!device_id) {
+    return res.status(400).json({ success: false, error: 'Missing device_id' });
+  }
+  const st = deviceStatus.get(device_id) || { disconnected: false };
+  res.json({ success: true, disconnected: !!st.disconnected });
+});
+
+// Utilidad para simular desconexión: GET /api/user/disconnect?device_id=...
+app.get('/api/user/disconnect', (req, res) => {
+  const { device_id } = req.query;
+  if (!device_id) return res.status(400).json({ success: false, error: 'Missing device_id' });
+  deviceStatus.set(device_id, { disconnected: true });
+  res.json({ success: true, message: 'Device flagged as disconnected' });
+});
+
 // Fetch de juegos
 app.get('/api/v3/fetch/:gameId', (req, res) => {
   const id = String(req.params.gameId);
@@ -102,6 +165,20 @@ app.get('/api/v3/fetch/:gameId', (req, res) => {
     last_update: game.last_update || stamp,
     access: game.access || "1"
   });
+});
+
+// Restricciones (la app consulta en login y dashboard)
+// GET usa cabecera X-Hardware-ID
+app.get('/api/v3/restriction', (req, res) => {
+  const hwid = req.header('X-Hardware-ID') || '';
+  // Demo: nunca restringimos
+  res.json({ is_restricted: false, hwid_banned: false, ip_banned: false });
+});
+
+// POST con { hwid, unique_id, username }
+app.post('/api/v3/restriction', (req, res) => {
+  const { hwid, unique_id, username } = req.body || {};
+  res.json({ is_restricted: false, hwid_banned: false, account_banned: false, unique_id_banned: false, ip_banned: false });
 });
 
 // Descarga de archivos de juego: /api/v3/file/:gameId.zip -> files/:gameId.zip
