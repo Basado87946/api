@@ -1,0 +1,13 @@
+{
+  "252490": {
+    "name": "Rust",
+    "image": "https://placehold.co/600x800/png?text=Rust",
+    "developers": ["Facepunch Studios"],
+    "genres": ["Action", "Survival"],
+    "metacritic": { "score": 74 },
+    "drm_notice": "",
+    "ext_user_account_notice": "Requires Steam account",
+    "last_update": "2025-05-24 00-00",
+    "access": "1"
+  }
+}
